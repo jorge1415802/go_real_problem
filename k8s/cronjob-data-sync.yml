@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob-${CI_PROJECT_NAME}-data-sync
+  namespace: ${KUBE_NAMESPACE}
+  labels:
+    app: process high speed data sync
+  annotations:
+    description: "Scheduled batch synchronization for high-volume inventory records"
+spec:
+  schedule: "${KUBE_CRON_DATA_SYNC}"
+  timeZone: "America/Argentina/Buenos_Aires"
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 10
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 6000
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3200
+      template:
+        spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: topology.kubernetes.io/zone
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                  weight: 100
+          nodeSelector:
+            ${SELECTOR_ROLE_BATCH}
+          containers:
+          - name: ${CI_PROJECT_NAME}
+            image: ${CI_REGISTRY_IMAGE}:${CI_PIPELINE_IID}
+            resources:
+              limits:
+                memory: "1536Mi"
+                cpu: "1000m"
+              requests:
+                cpu: "500m"
+                memory: "768Mi"
+            imagePullPolicy: IfNotPresent
+            env:
+              - name: JOB_SELECTION
+                value: DATA_BATCH_SYNC
+            envFrom:
+            - secretRef:
+                name: secret-${CI_PROJECT_NAME}
+            - configMapRef:
+                name: ${CI_PROJECT_NAME}
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: github-registry-credentials
